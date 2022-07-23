@@ -625,7 +625,7 @@ int parse_arguments(int argc, char **argv, struct program_arguments *args) {
     }
 
     if (args->file == NULL) {
-        fprintf(stderr, "File not specified");
+        fprintf(stderr, "File not specified\n");
         exit(2);
     }
 
