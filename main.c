@@ -384,6 +384,30 @@ int init_scanner(libusb_device_handle *handle) {
     return 0;
 }
 
+#define DRAIN_BUFFER 32000
+
+int drain_invalid_data_on_scanner(libusb_device_handle *handle) {
+    int ret;
+    int transferred;
+
+    // reset scanner
+    unsigned char *usb_drain_buffer = malloc(DRAIN_BUFFER);
+    ret = libusb_bulk_transfer(handle, LIBUSB_ENDPOINT_IN | 4, usb_drain_buffer, DRAIN_BUFFER, &transferred, TIMEOUT);
+    if (ret < LIBUSB_SUCCESS) {
+        fprintf(stderr, "USB drain failed %s\n", libusb_error_name(ret));
+
+        free(usb_drain_buffer);
+
+        return ret;
+    }
+
+    printf("Drained %d bytes\n", transferred);
+
+    free(usb_drain_buffer);
+
+    return 0;
+}
+
 int scan(struct program_arguments *program_arguments) {
     libusb_device **devs;
     struct found_scanner *found;
@@ -434,7 +458,7 @@ int scan(struct program_arguments *program_arguments) {
         return ret;
     }
 
-    ret = libusb_set_interface_alt_setting(handle, 1, 0);
+    ret = libusb_set_interface_alt_setting(handle, SCANNER_INTERFACE, 0);
     if (ret < LIBUSB_SUCCESS) {
         fprintf(stderr, "Cannot set alternate settings %s\n", libusb_error_name(ret));
         free(found);
@@ -456,24 +480,8 @@ int scan(struct program_arguments *program_arguments) {
         return -60;
     }
 
-
-//    ret = libusb_set_configuration(handle, 1);
-//    if (ret < LIBUSB_SUCCESS) {
-//        fprintf(stderr, "Cannot set configuration %s", libusb_error_name(ret));
-//        libusb_release_interface(handle, 0x01);
-//        free(found);
-//        libusb_close(handle);
-//
-//        return ret;
-//    }
-
-    // reset scanner
-    unsigned char *usb_drain_buffer = malloc(32000);
-    ret = libusb_bulk_transfer(handle, LIBUSB_ENDPOINT_IN | 4, usb_drain_buffer, 32000, &transferred, TIMEOUT);
-    if (ret < LIBUSB_SUCCESS) {
-        fprintf(stderr, "USB drain failed %s\n", libusb_error_name(ret));
-
-        free(usb_drain_buffer);
+    ret = drain_invalid_data_on_scanner(handle);
+    if (ret < 0) {
         close_scanner(handle);
 
         libusb_release_interface(handle, SCANNER_INTERFACE);
@@ -482,8 +490,6 @@ int scan(struct program_arguments *program_arguments) {
 
         return ret;
     }
-
-    printf("Drained %d bytes\n", transferred);
 
 //    // Q_Command
 //    ret = libusb_bulk_transfer(handle,
@@ -557,8 +563,6 @@ int scan(struct program_arguments *program_arguments) {
     configure_scanner(handle, program_arguments);
 
     read_page(handle, program_arguments);
-
-    free(usb_drain_buffer);
 
     close_scanner(handle);
 
