@@ -7,6 +7,8 @@
 #define VENDOR_BROTHER 0x04f9
 #define PRODUCT_DCP7010 0x0182
 
+#define SCANNER_INTERFACE 1
+
 #define TIMEOUT 30000
 
 
@@ -195,8 +197,15 @@ int configure_scanner(libusb_device_handle *pHandle) {
     int maxDataSize = 255;
 
     char *text_config = calloc(maxDataSize, sizeof(char));
-    int l = snprintf(text_config, maxDataSize, "R=%d,%d\nM=%s\nC=NONE\nB=50\nN=50\nU=OFF\nP=OFF\nA=0,0,%d,%d\n",
-             resX, resY, "CGRAY", PAGE_WIDTH * resX / 100, PAGE_HEIGHT * resY / 100);
+    snprintf(
+            text_config,
+            maxDataSize,
+            "R=%d,%d\nM=%s\nC=NONE\nB=50\nN=50\nU=OFF\nP=OFF\nA=0,0,%d,%d\n",
+             resX,
+             resY,
+             "CGRAY",
+             PAGE_WIDTH * resX / 100,
+             PAGE_HEIGHT * resY / 100);
 
     printf("Sending configuration config: %s\n", text_config);
 
@@ -212,8 +221,6 @@ int configure_scanner(libusb_device_handle *pHandle) {
     }
 
     printf("Sent %d scan command bytes\n", transferred);
-
-    // write text_config to usb
 
     free(command);
     free(text_config);
@@ -341,7 +348,7 @@ int find_scanner_device() {
 
     print_serial_number(handle, found->serial_number_index);
 
-    ret = libusb_set_configuration(handle, 1);
+    ret = libusb_set_configuration(handle, SCANNER_INTERFACE);
     if (ret < LIBUSB_SUCCESS) {
         fprintf(stderr, "Cannot set configuration %s", libusb_error_name(ret));
         free(found);
@@ -350,7 +357,7 @@ int find_scanner_device() {
         return ret;
     }
 
-    ret = libusb_claim_interface(handle, 0x01);
+    ret = libusb_claim_interface(handle, SCANNER_INTERFACE);
     if (ret < LIBUSB_SUCCESS) {
         fprintf(stderr, "Cannot claim scanner interface %s\n", libusb_error_name(ret));
         free(found);
@@ -363,7 +370,7 @@ int find_scanner_device() {
     if (ret < LIBUSB_SUCCESS) {
         fprintf(stderr, "Cannot set alternate settings %s\n", libusb_error_name(ret));
         free(found);
-        libusb_release_interface(handle, 1);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         libusb_close(handle);
 
         return ret;
@@ -388,7 +395,7 @@ int find_scanner_device() {
     );
     if (ret < LIBUSB_SUCCESS) {
         fprintf(stderr, "Cannot read get open %s\n", libusb_error_name(ret));
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -406,7 +413,7 @@ int find_scanner_device() {
     int nValue = (int) data[0];
     if (nValue != BREQ_GET_LENGTH) {
         fprintf(stderr, "Control command status is bad BREQ_GET_LENGTH\n");
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -417,7 +424,7 @@ int find_scanner_device() {
     nValue = (int) data[1];
     if (nValue != BDESC_TYPE) {
         fprintf(stderr, "Control command status is bad BDESC_TYPE\n");
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -428,7 +435,7 @@ int find_scanner_device() {
     nValue = (int) data[2];
     if (nValue != BREQ_GET_OPEN) {
         fprintf(stderr, "Control command status is bad BREQ_GET_OPEN\n");
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -439,7 +446,7 @@ int find_scanner_device() {
     nValue = (int) *((WORD *) &data[3]);
     if (nValue & BCOMMAND_RETURN) {
         fprintf(stderr, "Control command status is bad BCOMMAND_RETURN\n");
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -448,7 +455,7 @@ int find_scanner_device() {
 
     if (nValue != BCOMMAND_SCANNER) {
         fprintf(stderr, "Control command status is bad BCOMMAND_SCANNER\n");
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -475,7 +482,7 @@ int find_scanner_device() {
         free(usb_drain_buffer);
         close_scanner(handle);
 
-        libusb_release_interface(handle, 0x01);
+        libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
 
@@ -561,7 +568,7 @@ int find_scanner_device() {
 
     close_scanner(handle);
 
-    libusb_release_interface(handle, 0x01);
+    libusb_release_interface(handle, SCANNER_INTERFACE);
     free(found);
     libusb_close(handle);
 
