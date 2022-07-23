@@ -322,10 +322,71 @@ int read_page(libusb_device_handle *handle, struct program_arguments *program_ar
     return 0;
 }
 
+int init_scanner(libusb_device_handle *handle) {
+    int ret;
+    char data[BREQ_GET_LENGTH];
+
+    ret = libusb_control_transfer(
+            handle,
+            LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
+            BREQ_GET_OPEN,
+            BCOMMAND_SCANNER,
+            0,
+            data,
+            BREQ_GET_LENGTH,
+            TIMEOUT
+    );
+    if (ret < LIBUSB_SUCCESS) {
+        fprintf(stderr, "Cannot read get open %s\n", libusb_error_name(ret));
+        return ret;
+    }
+
+    // /* returns 05 10 01 02 00 */
+    printf("data: ");
+    for (int i = 0; i < BREQ_GET_LENGTH; i++) {
+        printf("%02X", (unsigned char) data[i]);
+    }
+    printf("\n");
+
+    // check the size of discriptor
+    int nValue = (int) data[0];
+    if (nValue != BREQ_GET_LENGTH) {
+        fprintf(stderr, "Control command status is bad BREQ_GET_LENGTH\n");
+        return -60;
+    }
+
+    // check the type of discriptor
+    nValue = (int) data[1];
+    if (nValue != BDESC_TYPE) {
+        fprintf(stderr, "Control command status is bad BDESC_TYPE\n");
+        return -60;
+    }
+
+    // check the command ID
+    nValue = (int) data[2];
+    if (nValue != BREQ_GET_OPEN) {
+        fprintf(stderr, "Control command status is bad BREQ_GET_OPEN\n");
+        return -60;
+    }
+
+    // check the command parameters
+    nValue = (int) *((WORD *) &data[3]);
+    if (nValue & BCOMMAND_RETURN) {
+        fprintf(stderr, "Control command status is bad BCOMMAND_RETURN\n");
+        return -60;
+    }
+
+    if (nValue != BCOMMAND_SCANNER) {
+        fprintf(stderr, "Control command status is bad BCOMMAND_SCANNER\n");
+        return -60;
+    }
+
+    return 0;
+}
+
 int scan(struct program_arguments *program_arguments) {
     libusb_device **devs;
     struct found_scanner *found;
-    char data[BREQ_GET_LENGTH];
     int transferred;
 
     ssize_t cnt;
@@ -386,82 +447,8 @@ int scan(struct program_arguments *program_arguments) {
     // libusb_clear_halt(handle, )
 
     // control_in_vendor_device(1, 2, 0, 5); /* returns 05 10 01 02 00 */
-
-    printf("request type is %02X\n", LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE);
-
-    ret = libusb_control_transfer(
-            handle,
-            LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_RECIPIENT_DEVICE,
-//            BREQ_TYPE,
-            BREQ_GET_OPEN,
-            BCOMMAND_SCANNER,
-            0,
-            data,
-            BREQ_GET_LENGTH,
-            TIMEOUT
-    );
-    if (ret < LIBUSB_SUCCESS) {
-        fprintf(stderr, "Cannot read get open %s\n", libusb_error_name(ret));
-        libusb_release_interface(handle, SCANNER_INTERFACE);
-        free(found);
-        libusb_close(handle);
-
-        return ret;
-    }
-
-    // /* returns 05 10 01 02 00 */
-    printf("data: ");
-    for (int i = 0; i < BREQ_GET_LENGTH; i++) {
-        printf("%02X", (unsigned char) data[i]);
-    }
-    printf("\n");
-
-    // check the size of discriptor
-    int nValue = (int) data[0];
-    if (nValue != BREQ_GET_LENGTH) {
-        fprintf(stderr, "Control command status is bad BREQ_GET_LENGTH\n");
-        libusb_release_interface(handle, SCANNER_INTERFACE);
-        free(found);
-        libusb_close(handle);
-
-        return -60;
-    }
-
-    // check the type of discriptor
-    nValue = (int) data[1];
-    if (nValue != BDESC_TYPE) {
-        fprintf(stderr, "Control command status is bad BDESC_TYPE\n");
-        libusb_release_interface(handle, SCANNER_INTERFACE);
-        free(found);
-        libusb_close(handle);
-
-        return -60;
-    }
-
-    // check the command ID
-    nValue = (int) data[2];
-    if (nValue != BREQ_GET_OPEN) {
-        fprintf(stderr, "Control command status is bad BREQ_GET_OPEN\n");
-        libusb_release_interface(handle, SCANNER_INTERFACE);
-        free(found);
-        libusb_close(handle);
-
-        return -60;
-    }
-
-    // check the command parameters
-    nValue = (int) *((WORD *) &data[3]);
-    if (nValue & BCOMMAND_RETURN) {
-        fprintf(stderr, "Control command status is bad BCOMMAND_RETURN\n");
-        libusb_release_interface(handle, SCANNER_INTERFACE);
-        free(found);
-        libusb_close(handle);
-
-        return -60;
-    }
-
-    if (nValue != BCOMMAND_SCANNER) {
-        fprintf(stderr, "Control command status is bad BCOMMAND_SCANNER\n");
+    ret = init_scanner(handle);
+    if (ret < 0) {
         libusb_release_interface(handle, SCANNER_INTERFACE);
         free(found);
         libusb_close(handle);
@@ -647,7 +634,7 @@ int main(int argc, char **argv) {
         return 127;
     }
 
-    printf("lib usb initied\n");
+    printf("lib usb inited\n");
 
     r = scan(&program_arguments);
 
