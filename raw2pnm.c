@@ -59,17 +59,16 @@ int main(int argc, char **argv) {
         unsigned int height = file_size(name) / (width + 3);
 
         if(strchr("DHL", type)) /* color */ {
-            convert_ppm(width, height / 3, raw_fp, name);
-
             printf("Width %d %x height %d\n", width, width, height / 3);
+            convert_ppm(width, height / 3, raw_fp, name);
         }
-//        else if(type == '@') /* gray */
-//            convert_pgm(width, height, raw_fp, name);
-//        else {
-//            fprintf(stderr, "ERROR: '%s' has unrecognised type '%c'\n",
-//                    name, type);
-//            continue;
-//        }
+        else if(type == '@') /* gray */
+            convert_pgm(width, height, raw_fp, name);
+        else {
+            fprintf(stderr, "ERROR: '%s' has unrecognised type '%c'\n",
+                    name, type);
+            continue;
+        }
     }
     return 0;
 }

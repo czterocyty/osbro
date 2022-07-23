@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define VENDOR_BROTHER 0x04f9
 #define PRODUCT_DCP7010 0x0182
@@ -94,7 +95,11 @@ typedef struct tagMFCDEVICEINFO {
 } MFCDEVICEINFO, *LPMFCDEVICEINFO;
 
 
-
+struct program_arguments {
+    int resolution;
+    char* mode;
+    char* file;
+};
 
 struct found_scanner {
     libusb_device *dev;
@@ -191,26 +196,24 @@ int close_scanner( libusb_device_handle *handle )
     return 0;
 }
 
-int configure_scanner(libusb_device_handle *pHandle) {
-    int resX = 300;
-    int resY = 300;
-    int maxDataSize = 255;
+#define CONFIGURATION_DATA_SIZE 255
 
-    char *text_config = calloc(maxDataSize, sizeof(char));
+int configure_scanner(libusb_device_handle *pHandle, struct program_arguments *program_arguments) {
+    char *text_config = calloc(CONFIGURATION_DATA_SIZE, sizeof(char));
     snprintf(
             text_config,
-            maxDataSize,
+            CONFIGURATION_DATA_SIZE,
             "R=%d,%d\nM=%s\nC=NONE\nB=50\nN=50\nU=OFF\nP=OFF\nA=0,0,%d,%d\n",
-             resX,
-             resY,
-             "CGRAY",
-             PAGE_WIDTH * resX / 100,
-             PAGE_HEIGHT * resY / 100);
+             program_arguments->resolution,
+             program_arguments->resolution,
+             program_arguments->mode,
+             PAGE_WIDTH * program_arguments->resolution / 100,
+             PAGE_HEIGHT * program_arguments->resolution / 100);
 
     printf("Sending configuration config: %s\n", text_config);
 
-    char *command = calloc(maxDataSize, sizeof(char));
-    int length = snprintf(command, maxDataSize, "\x1bX\n%s\x80", text_config);
+    char *command = calloc(CONFIGURATION_DATA_SIZE, sizeof(char));
+    int length = snprintf(command, CONFIGURATION_DATA_SIZE, "\x1bX\n%s\x80", text_config);
 
     int transferred;
     int ret = libusb_bulk_transfer(pHandle,
@@ -246,13 +249,13 @@ int bulk_read(libusb_device_handle *handle, unsigned char *buf, int length) {
 #define SLEEPS_COUNT 40
 #define SLEEPS_COUNT_TIMEOUT 100
 
-int read_page(libusb_device_handle *handle) {
+int read_page(libusb_device_handle *handle, struct program_arguments *program_arguments) {
     FILE *fp = NULL;
+    unsigned char buffer[READ_BUFFER_SIZE];
 
     int sleeps_count = 0;
     while (1) {
-        unsigned char buffer[READ_BUFFER_SIZE];
-        int num_bytes = bulk_read(handle, &buffer, READ_BUFFER_SIZE);
+        int num_bytes = bulk_read(handle, (unsigned char *) &buffer, READ_BUFFER_SIZE);
         if (num_bytes > 0) {
             sleeps_count = 0;
         }
@@ -263,9 +266,13 @@ int read_page(libusb_device_handle *handle) {
             printf("Read %d bytes from scanner\n", num_bytes);
 
             if (fp == NULL) {
-                char *fname = "/tmp/scanner.raw";
+                char *fname = program_arguments->file;
                 printf("Opening '%s'\n", fname);
                 fp = fopen(fname, "wb");
+                if (fp == NULL) {
+                    fprintf(stderr, "Cannot open file '%s' error=%s\n", fname, strerror(errno));
+                    return 3;
+                }
             }
 
             fwrite(buffer, 1, num_bytes, fp);
@@ -315,7 +322,7 @@ int read_page(libusb_device_handle *handle) {
     return 0;
 }
 
-int find_scanner_device() {
+int scan(struct program_arguments *program_arguments) {
     libusb_device **devs;
     struct found_scanner *found;
     char data[BREQ_GET_LENGTH];
@@ -560,9 +567,9 @@ int find_scanner_device() {
 //
 //    free(qCommandReadBuffer);
 
-    configure_scanner(handle);
+    configure_scanner(handle, program_arguments);
 
-    read_page(handle);
+    read_page(handle, program_arguments);
 
     free(usb_drain_buffer);
 
@@ -575,11 +582,64 @@ int find_scanner_device() {
     return ret;
 }
 
+char *parse_mode(char mode) {
+    char *rmode;
+    switch (mode) {
+        case 'c': rmode = "CGRAY";  break;
+        case 'g': rmode = "GRAY64"; break;
+        case 't': rmode = "TEXT";   break;
+        default:
+            fprintf(stderr, "ERROR: unrecognised mode, "
+                            "should be one of [cgt]\n");
+            exit(2);
+    }
 
+    return rmode;
+}
 
+int parse_arguments(int argc, char **argv, struct program_arguments *args) {
+    int resolution;
+    int c;
 
-int main() {
-    printf("Hello, World!\n");
+    args->resolution = 100;
+    args->mode = "CGRAY";
+    args->file = NULL;
+
+    while ((c = getopt(argc, argv, "r:m:f:")) != -1) {
+        switch (c) {
+            case 'f':
+                args->file = optarg;
+                break;
+            case 'r':
+                resolution = atoi(optarg);
+                if (resolution < 100 || resolution > 600 || resolution % 100 != 0) {
+                    fprintf(stderr, "Resolution must be between 100 and 600, and be module 100");
+                    exit(2);
+                }
+                args->resolution = resolution;
+                break;
+            case 'm':
+                args->mode = parse_mode(optarg[0]);
+                break;
+        }
+    }
+
+    if (args->file == NULL) {
+        fprintf(stderr, "File not specified");
+        exit(2);
+    }
+
+    printf("Arguments: file=%s resolution=%d mode=%s\n", args->file, args->resolution, args->mode);
+
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    struct program_arguments program_arguments;
+
+    printf("Hello, DCP-7020L!\n");
+
+    parse_arguments(argc, argv, &program_arguments);
 
     int r = libusb_init(NULL);
     if (r < LIBUSB_SUCCESS) {
@@ -589,7 +649,7 @@ int main() {
 
     printf("lib usb initied\n");
 
-    r = find_scanner_device();
+    r = scan(&program_arguments);
 
     libusb_exit(NULL);
 
